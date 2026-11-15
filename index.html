@@ -199,9 +199,11 @@ const CFG = {
   splatT: 0.14,           // с: «шмяк» — колбаска расплющивается лепёшкой на клетке
   splashN: 2,             // брызг от каждой капли (2D-бусины)
   hitStopScale: 0.02,     // скорость игровых часов в хит-стопе (сейчас хит-стоп не вызывается: клеток слишком много, игра бы заикалась)
-  dimT: 0.5,              // с: закрашенная клетка уходит из полного цвета в приглушённый (до конца картинки)
-  dimSat: 0.45,           // насколько приглушено закрашенное: доля серого той же яркости
-  dimDark: 0.16,          // и насколько затемнено в сторону холста
+  dimT: 0.45,             // с: закрашенная клетка уходит из полного цвета в приглушённый (до конца картинки)
+  dimTint: 0.2,           // закрашенное до конца картинки — «пол»: цвет холста чуть светлее и только 20% своего цвета (v0.4.2: не мешает считывать, что красить дальше)
+  floorLift: 0.07,        // насколько «пол» закрашенного светлее холста (иначе путается с пустыми сотами)
+  farH: 0.55,             // незакрашенная клетка, до которой краска пока не долетает: ниже (доля высоты блока)…
+  farDark: 0.42,          // …и утоплена в фон: верх и бока смешаны с цветом холста (множитель темноты путал песочную с коричневой)
   fillT: 0.16,            // с: краска разливается по клетке, клетка оседает в плоский пиксель
   clickSquash: 0.2,       // пиксель пружинит, когда лёг
   rippleHop: 0.12,        // соседи закрашенной клетки чуть подпрыгивают (в клетках)
@@ -223,7 +225,7 @@ const CFG = {
   winLift: 0.55,          // на сколько приподнимается картинка
   winWaveAt: 0.35,        // с: старт волны по пикселям (от центра картинки)
   winWavePer: 0.075,      // с на единицу расстояния от центра
-  winHop: 0.45,           // высота подскока пикселя в волне
+  winHop: 0.7,            // высота подскока пикселя в волне
   winConfetti: 70,        // капель в салюте
   winCardAfter: 1.25,     // с после вспышки: карточка победы
   winRain: 26,            // капель в «дожде» под карточкой
@@ -1395,15 +1397,16 @@ function drawTiles(t){
       const fl = t - vp.flashAt; if (fl > 0 && fl < 0.3){ glow = Math.max(glow, (1 - fl / 0.3) * 0.7); lift = Math.sin(Math.PI * fl / 0.3) * 0.25 * h; }       // весь цвет закрашен: вспышка бежит по его пикселям
       if (E){                                                  // финал: картинка приподнята, по ней бежит волна, потом она «дышит»
         lift = CFG.winLift * E.f; const sw = E.s - CFG.winWaveAt - vp.wr * CFG.winWavePer;
-        if (sw > 0 && sw < 0.34){ lift += Math.sin(Math.PI * sw / 0.34) * CFG.winHop; glow = Math.max(glow, (1 - sw / 0.34) * 0.75); s *= 1 + 0.12 * Math.sin(Math.PI * sw / 0.34); }
+        if (sw > 0 && sw < 0.34){ lift += Math.sin(Math.PI * sw / 0.34) * CFG.winHop; glow = Math.max(glow, (1 - sw / 0.34) * 0.8); s *= 1 + 0.28 * Math.sin(Math.PI * sw / 0.34); }
+        if (sw > 0 && !vp.waved){ vp.waved = true; if (fxRnd() < 0.16) G.fx.push({ type: 'glint', x: vp.x, y: CFG.winLift + 0.6, z: vp.z, t0: t, dur: 0.38, size: 0.55, col: fxRnd() < 0.5 ? '#ffffff' : PAL.paint[vp.kind] }); }   // волна зажигает картинку: пиксель вспыхивает полным цветом, кое-где искра
         if (E.s > E.flashS){ glow = Math.max(glow, Math.max(0, 1 - (E.s - E.flashS) / 0.5) * 0.85); lift += 0.06 * Math.sin((E.s - E.flashS) * 2.6 - vp.wr * 0.7); }
       } else { const sh = ((t * 0.5 + (vp.x + vp.z) * 0.045) % 3.2); if (sh < 0.16) glow = Math.max(glow, Math.sin(Math.PI * sh / 0.16) * 0.16); }   // редкий блик бежит по готовым пикселям
       if (vp.lit || d < 0.4){ const e = Math.max(0, 1 - d / 0.35); R3.cellGlow(vp.i, e * 0.9); vp.lit = e > 0; }   // клетка холста вспыхивает под лёгшим пикселем
-      // до конца картинки закрашенное приглушено (цвет читается, но не спорит с тем, что ещё красить); на финале волна возвращает полный цвет
+      // до конца картинки закрашенное — «пол» почти цвета холста (не спорит с тем, что ещё красить); на финале волна возвращает полный цвет
       let dim = clamp01((d - 0.12) / CFG.dimT); if (fl > 0 && fl < 0.45) dim = Math.min(dim, fl / 0.45);
       if (E){ const sw = E.s - CFG.winWaveAt - vp.wr * CFG.winWavePer; dim = sw > 0 ? 0 : 1; }
-      const pc = dim > 0 ? mix3(col, COL.paintDim[vp.kind], dim) : col;
-      R3.tile(vp.x, PH / 2 + y0 + lift, vp.z, null, h * s, ps, pc, 0, null, glow, COL.pixRim[vp.kind], null, pc, 1);
+      const pc = dim > 0 ? mix3(col, COL.paintDim[vp.kind], dim) : col, seam = dim > 0 ? mix3(pc, COL.floorSeam, dim) : null;
+      R3.tile(vp.x, PH / 2 + y0 + lift, vp.z, null, h * s, ps, pc, 0, null, glow, seam, null, pc, 1);
       continue;
     }
     if (vp.state === 'fill'){                                  // краска разливается от центра к краям, клетка оседает в пиксель
@@ -1413,11 +1416,11 @@ function drawTiles(t){
     }
     const bu = (t - vp.bumpAt) / CFG.rippleT; if (bu > 0 && bu < 1) y0 += Math.sin(Math.PI * bu) * CFG.rippleHop * h;      // сосед только что закрашен
     // достижимая клетка (краска до неё уже долетает) стоит выше и со светлой кромкой; открылась — подпрыгнула; зажата капелька её цвета — кромка пульсирует
-    let sy = pop, rimA = 0;
+    let sy = pop * (vp.reach ? 1 : CFG.farH), rimA = 0;
     if (vp.reach){ const ra = t - vp.reachAt; sy *= 1 + CFG.reachLift * (ra < 0.5 ? 1 + 1.4 * spring(ra, 24, 7) : 1); rimA = CFG.reachRim;
       if (G.peek === vp.kind) rimA = mix(CFG.reachRim, CFG.peekRim, 0.5 + 0.5 * Math.sin(t * 9)); }
     const rim = rimA > 0 ? mix3(blank, COL.white, rimA) : null;
-    R3.tile(vp.x, H / 2 * sy + y0, vp.z, null, h * pop, h * sy, vp.reach ? blank : COL.blankFar[vp.kind], 0, col, G.peek === vp.kind && vp.reach ? 0.12 : 0, rim, null, col, 0);
+    R3.tile(vp.x, H / 2 * sy + y0, vp.z, null, h * pop, h * sy, vp.reach ? blank : COL.blankFar[vp.kind], 0, col, G.peek === vp.kind && vp.reach ? 0.12 : 0, rim, null, vp.reach ? col : COL.farSide[vp.kind], 0);
     if (y0 < 2) R3.shadow(vp.x, vp.z, CFG.tileR * 1.3 * h, 0.5);
   }
 }
@@ -1770,9 +1773,10 @@ window.RASKRASKA = {
   COL.paint = CFG.paints.map(p => R3.rgb(p.col)); COL.paintDark = COL.paint.map(c => mix3(c, ink, 0.68)); COL.paintLit = COL.paint.map(c => mix3(c, [1, 1, 1], 0.06));
   const board = R3.rgb(css('--board'));
   const lumC = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
-  COL.paintDim = COL.paint.map(c => { const l = lumC(c); return lumC(c) < 0.3 ? mix3(c, R3.rgb('#6d72a6'), 0.3) : mix3(mix3(c, [l, l, l], CFG.dimSat), board, CFG.dimDark); });   // приглушённое закрашенное (тёмное — светлее, к серому, а не в цвет холста)
-  COL.pixRim = COL.paint.map(c => lumC(c) < 0.3 ? mix3(c, R3.rgb('#b9bff0'), 0.7) : null);    // тёмный пиксель на тёмном холсте — со светлой кромкой
-  COL.blankBase = R3.rgb(css('--blank')); COL.blank = COL.paint.map(c => mix3(COL.blankBase, c, CFG.blankTint)); COL.blankFar = COL.blank.map(c => c.map(v => v * 0.88));   // недостижимые пока клетки — чуть темнее (сильнее — путаются с приглушённым закрашенным)
+  const floor = mix3(board, [1, 1, 1], CFG.floorLift);
+  COL.paintDim = COL.paint.map(c => mix3(floor, c, CFG.dimTint * (lumC(c) < 0.3 ? 0.6 : 1)));   // закрашенное до финала — «пол» с лёгким оттенком своего цвета
+  COL.floorSeam = mix3(floor, [1, 1, 1], 0.16);                                                   // светлый шов «плитки пола» по кромке закрашенной клетки
+  COL.blankBase = R3.rgb(css('--blank')); COL.blank = COL.paint.map(c => mix3(COL.blankBase, c, CFG.blankTint)); COL.blankFar = COL.blank.map(c => mix3(c, board, CFG.farDark)); COL.farSide = COL.paint.map(c => mix3(c, board, CFG.farDark * 0.85));   // недостижимые пока клетки — чуть темнее (сильнее — путаются с приглушённым закрашенным)
   COL.paper = R3.rgb(css('--paper')); COL.secret = R3.rgb(css('--secret')); COL.secretDark = mix3(COL.secret, ink, 0.68);
   // тюбики: у тёмных красок контур светлый (иначе чёрный тюбик — дырка в тёмном фоне), крышка контрастная корпусу
   const lum = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11, edgeLight = R3.rgb('#c9cdf0');
