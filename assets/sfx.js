@@ -2,11 +2,11 @@
 /* =====================================================================================================
    assets/sfx.js — звук «Раскраски»: WebAudio-синтез, ни одного файла (PROTO-BASE §8).
 
-   Главное — капля краски. Это «буль»: синус, который за 45 мс взлетает к своей ноте и гаснет, плюс короткий
-   мокрый шлепок шума. У каждой краски своя нота-основа (CFG.paints[].note — все из мажорной пентатоники до),
-   а высота идёт лесенкой: каждая следующая капля в плитке на ступень выше, десятая приходит в тонику —
-   и поверх неё плеск заливки с аккордом. Готовый пиксель ложится керамическим щелчком со стеклянным звоном.
-   Разброс: основной тон ±CFG.sfx.pitchJitter (малый, иначе лесенка расстраивается), обертоны ±CFG.sfx.timbreJitter.
+   Звук мокрый и тактильный, без колокольчиков и стекла (v0.4.1, просьба Андрея: «колокол → сатисфайный»).
+   Главное — клетка закрашена: густой «шмяк/чвяк» — шлепок шума через низкий фильтр, влажное «ч» и короткий «плоп» с падающим
+   тоном. Лесенка мягкая: от клетки к клетке сдвигаются частоты фильтра и плопа (у каждой краски своя основа), с разбросом —
+   сотни подряд не звенят и не утомляют. Веха серии — сочный «поп» выдавленной краски, каждая следующая выше и плотнее.
+   Цвет закрашен, финал, галерея — дерево (маримба): мягкий щипок с коротким хвостом и пухлый «пуф» с шелестом.
    Звенящих голосов не больше CFG.sfx.maxVoices: новый голос глушит самый старый.
    Случайность — свой генератор с сидом (Math.random не используется).
    ===================================================================================================== */
@@ -22,12 +22,6 @@ const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const scaleHz = (base, step) => hz(base + 12 * Math.floor(step / 5) + SCALE[((step % 5) + 5) % 5]);
 // Ступень лесенки для i-й монеты слоя (0…9): девять шагов вверх, десятая — в тонику двумя октавами выше начала.
 const ladderStep = (i) => i >= 9 ? 10 : i;
-// Звоны: parts — [множитель частоты, громкость]; decay — затухание основы, с; beat — расстройка второй основы (биение), Гц.
-//   glass — стеклянный звон готового пикселя; bell — тёплый колокольчик аккордов и победы.
-const TIMBRE = {
-  glass: { type: 'sine', parts: [[1, 1], [2.7, 0.18], [4.3, 0.06]], decay: 0.2, gain: 0.15, beat: 0 },
-  bell:  { type: 'sine', parts: [[1, 1], [2, 0.5], [3, 0.3], [4.02, 0.12]], decay: 0.5, gain: 0.2, beat: 5 },
-};
 const paintNote = (kind) => (CFG.paints[kind] && CFG.paints[kind].note) || 72;
 const on = () => S.ac && !S.muted && S.ac.state === 'running';
 const note = (name, info) => { if (S.log) S.log('sound', name, info); };
@@ -79,54 +73,54 @@ function claimVoice(t, dur){
   const g = S.ac.createGain(); g.gain.value = 1; g.connect(bus); voices.push({ end: t + dur, g }); return g;
 }
 const loud = (f) => Math.min(1, Math.pow(1300 / Math.max(200, f), 0.55));      // высокие ноты тише — ухо не режет
-function ring(tm, f0, t, vel, dest, long){
-  for (const [ratio, amp] of tm.parts){
-    const f = f0 * ratio * (ratio === 1 ? 1 : jit(CFG.sfx.timbreJitter));
-    osc(f, tm.type, t, amp * tm.gain * vel * loud(f), tm.decay * (ratio === 1 ? 1 : 0.55) * (long || 1), dest);
-  }
-  if (tm.beat) osc(f0 + tm.beat, 'sine', t, 0.5 * tm.gain * vel * loud(f0), tm.decay * (long || 1), dest);
-}
 
 // --- события игры ---
-// «Буль»: синус взлетает к ноте f0 и гаснет; сверху тихая октава.
-function bloop(f0, t, vel, dest, long){
-  const ac = S.ac, o = ac.createOscillator(), g = ac.createGain(), d = 0.16 * (long || 1); o.type = 'sine';
-  o.frequency.setValueAtTime(f0 * 0.52, t); o.frequency.exponentialRampToValueAtTime(f0, t + 0.045);
-  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.34 * vel * loud(f0), t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.006 + d);
-  o.connect(g); g.connect(dest); o.start(t); o.stop(t + d + 0.03);
-  osc(f0 * 2 * jit(CFG.sfx.timbreJitter), 'sine', t + 0.03, 0.05 * vel * loud(f0 * 2), 0.05 * (long || 1), dest);
+// «Плоп»: синус падает по тону — лопнул пузырь густой краски; dur — длина спада, с.
+function plop(f0, t, vel, dest, dur){
+  const ac = S.ac, o = ac.createOscillator(), g = ac.createGain(), d = dur || 0.07; o.type = 'sine';
+  o.frequency.setValueAtTime(f0 * 1.5, t); o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + d);
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.3 * vel, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.03);
+  o.connect(g); g.connect(dest); o.start(t); o.stop(t + d + 0.05);
 }
-// Капля краски легла в плитку: kind — краска, i — какая по счёту в слое (0…9), vel — сила.
+// Дерево (маримба): основа с коротким хвостом, обертон ×3,93 гаснет мгновенно, мягкий стук колотушки. long — множитель хвоста.
+function wood(f0, t, vel, dest, long){
+  osc(f0, 'sine', t, 0.26 * vel * loud(f0), 0.11 * (long || 1), dest, 0.002);
+  osc(f0 * 3.93, 'sine', t, 0.05 * vel * loud(f0 * 3.93), 0.014, dest, 0.001);
+  noise(t, 0.012, 0.08 * vel, 'lowpass', 1600, 0.7, dest);
+}
+// Клетка закрашена: «шмяк» густой краски. kind — краска (своя основа), i — ступень лесенки (0…9), vel — сила.
 S.plip = function(kind, i, vel, delay){
-  if (!on()) return; const t = S.ac.currentTime + (delay || 0), v = vel === undefined ? 1 : vel;
-  const f0 = scaleHz(paintNote(kind) - 12, ladderStep(i)) * jit(CFG.sfx.pitchJitter), out = claimVoice(t, 0.3);
-  bloop(f0, t, v, out);
-  noise(t, 0.035, 0.16 * v, 'bandpass', 2400 * jit(0.15), 0.9, out, 900);                // мокрый шлепок
-  noise(t, 0.06, 0.14 * v, 'lowpass', 900, 0.8, out, 260);                               // «шмяк»: глухой влажный удар
+  if (!on()) return; const t = S.ac.currentTime + (delay || 0), v = vel === undefined ? 1 : vel, out = claimVoice(t, 0.2);
+  const st = ladderStep(i), k = Math.pow(2, (paintNote(kind) - 66) / 48) * (1 + 0.035 * st) * jit(0.07);
+  noise(t, 0.07 * jit(0.15), 0.27 * v, 'lowpass', (520 + 60 * st) * k * jit(0.2), 0.9, out, 170);   // шлепок
+  noise(t, 0.025, 0.06 * v, 'bandpass', 1500 * k * jit(0.2), 1.1, out, 600);                       // влажное «ч»
+  plop(170 * k, t + 0.004, 0.75 * v, out, 0.06 * jit(0.15));                                       // плоп
 };
-// Слой залит: плеск + аккорд краски, со сдвигом на ступень за каждую плитку серии.
+// Веха серии: сочный «поп» выдавленной краски; step — номер вехи, каждая выше и плотнее (с 3-й — второй пузырь, с 6-й — хлюп).
+S.pop = function(step){
+  if (!on()) return; const t = S.ac.currentTime, s = Math.min(8, step || 0), f = Math.pow(1.07, s), out = claimVoice(t, 0.3);
+  plop(260 * f, t, 0.9, out, 0.09); noise(t, 0.05, 0.18, 'bandpass', 900 * f, 1.4, out, 350);
+  if (s >= 2) plop(390 * f, t + 0.035, 0.4 + 0.05 * s, out, 0.06);
+  if (s >= 5) noise(t + 0.02, 0.08, 0.1, 'lowpass', 700, 0.8, out, 200);
+  note('combo.pop', 'step=' + s);
+};
+// Цвет закрашен целиком: большой хлюп и два деревянных щипка в ноту краски (combo — сдвиг на ступень).
 S.flood = function(kind, combo){
   if (!on()) return; const t = S.ac.currentTime, c = Math.min(combo, 9), base = paintNote(kind) - 12;
   const out = S.ac.createGain(); out.gain.value = 0.9; out.connect(bus);
-  noise(t, 0.2, 0.3, 'lowpass', 3600, 0.7, out, 500); noise(t + 0.02, 0.09, 0.14, 'highpass', 4200, 0.7, out);
-  [0, 2, 3, 5].forEach((st, k) => bloop(scaleHz(base, st + c), t + k * 0.03, 0.62, out, 1.7));
-  osc(scaleHz(48, c), 'sine', t, 0.16, 0.16, out);                                       // тёплый низ под аккордом
-  note('flood.chord', 'paint=' + CFG.paints[kind].id + ' combo=' + (combo + 1));
+  noise(t, 0.22, 0.24, 'lowpass', 1400, 0.7, out, 180); plop(140, t, 1, out, 0.12); plop(220, t + 0.05, 0.6, out, 0.09);
+  wood(scaleHz(base, c), t + 0.06, 0.8, out, 1.4); wood(scaleHz(base, c + 2), t + 0.13, 0.7, out, 1.4);
+  note('flood.wood', 'paint=' + CFG.paints[kind].id + ' combo=' + (combo + 1));
 };
 // Плитка переворачивается: короткий взмах.
 S.flip = function(){ if (!on()) return; noise(S.ac.currentTime, 0.16, 0.09, 'bandpass', 900, 0.9, bus, 3200); };
-// Пиксель лёг на место: керамический щелчок + стеклянный звон; step — ступень звона (растёт с серией и в финальной волне).
+// Пиксель лёг на место: глухой стук и деревянный щипок; step — ступень.
 S.click = function(step, vel){
-  if (!on()) return; const t = S.ac.currentTime, v = vel === undefined ? 1 : vel, out = claimVoice(t, 0.5);
-  osc(190, 'sine', t, 0.36 * v, 0.03, out, 0.001, 110); noise(t, 0.014, 0.34 * v, 'bandpass', 4300 * jit(0.08), 1.6, out); osc(2100 * jit(0.03), 'triangle', t, 0.05 * v, 0.012, out, 0.001);
-  ring(TIMBRE.glass, scaleHz(84, step || 0), t + 0.01, 0.8 * v, out, 1.3);
+  if (!on()) return; const t = S.ac.currentTime, v = vel === undefined ? 1 : vel, out = claimVoice(t, 0.4);
+  osc(190, 'sine', t, 0.3 * v, 0.03, out, 0.001, 110); wood(scaleHz(72, step || 0), t + 0.005, 0.7 * v, out);
   note('pixel.click');
 };
-// Открылся следующий слой — «дзинь» его краски.
-S.ding = function(kind){
-  if (!on()) return; const t = S.ac.currentTime + 0.03, out = claimVoice(t, 0.5);
-  bloop(scaleHz(paintNote(kind), 5), t, 0.7, out, 1.6); note('layer.ding', CFG.paints[kind].id);
-};
+S.ding = function(kind){ if (!on()) return; const t = S.ac.currentTime + 0.03, out = claimVoice(t, 0.4); wood(scaleHz(paintNote(kind), 5), t, 0.7, out, 1.4); note('layer.ding', CFG.paints[kind].id); };
 // Капелька-перевозчик: упругий «боньк» + тихий буль её краски.
 S.carrierTap = function(kind){
   if (!on()) return; const t = S.ac.currentTime;
@@ -182,19 +176,18 @@ S.spill = function(kinds, delay){ if (!on()) return; const d0 = delay || 0;
   for (let i = 0; i < 6; i++) noise(S.ac.currentTime + d0 + i * 0.035, 0.05, 0.16, 'lowpass', 1400, 0.8, bus, 300);        // тюбики лопаются
   kinds.forEach((k, i) => S.plip(k, 8 - (i % 8), 0.45 + rnd() * 0.3, d0 + 0.02 + i * 0.05 + rnd() * 0.03)); osc(98, 'sawtooth', S.ac.currentTime, 0.12, 0.2, bus, 0.01, 46); note('lose.spill'); };
 S.lose = function(){ if (!on()) return; const t = S.ac.currentTime; osc(hz(55), 'triangle', t, 0.2, 0.25, bus, 0.01, hz(48)); osc(hz(58), 'triangle', t + 0.02, 0.14, 0.25, bus, 0.01, hz(51)); note('lose'); };
-// Финал. Волна по картинке: каждый пиксель звенит своей ступенью (i растёт от центра к краям).
-S.pixelWave = function(i){ if (!on()) return; const t = S.ac.currentTime, out = claimVoice(t, 0.5); ring(TIMBRE.glass, scaleHz(72, i), t, 0.55, out, 1.2); };
-// Вспышка готовой картинки: удар, сверкающий хвост и аккорд.
+// Финал. Волна по картинке: каждый пиксель — деревянный щипок своей ступени (i растёт от центра к краям).
+S.pixelWave = function(i){ if (!on()) return; const t = S.ac.currentTime, out = claimVoice(t, 0.4); wood(scaleHz(60, i), t, 0.55, out, 1.1); };
+// Вспышка готовой картинки: пухлый «пуф» с шелестом, мягкий низ и арпеджио маримбы.
 S.winFlash = function(){
   if (!on()) return; const t = S.ac.currentTime, out = S.ac.createGain(); out.gain.value = 1; out.connect(bus);
-  osc(110, 'sine', t, 0.55, 0.1, out, 0.002, 55); noise(t, 0.5, 0.2, 'highpass', 5200, 0.6, out, 9000);
-  [0, 2, 3, 5, 7, 8, 10].forEach((st, k) => ring(TIMBRE.bell, scaleHz(60, st), t + k * 0.055, 0.6, out, 2.2));
-  osc(hz(36), 'sine', t, 0.3, 0.3, out); note('win');
+  osc(110, 'sine', t, 0.45, 0.1, out, 0.004, 55); noise(t, 0.45, 0.22, 'lowpass', 900, 0.7, out, 260); noise(t + 0.03, 0.3, 0.05, 'highpass', 3000, 0.6, out, 6000);
+  [0, 2, 4, 5, 7].forEach((st, k) => wood(scaleHz(60, st), t + 0.05 + k * 0.07, 0.75, out, 1.8));
+  osc(hz(36), 'sine', t, 0.25, 0.3, out); note('win');
 };
 S.countTick = function(u){ if (!on()) return; osc(scaleHz(72, Math.floor(u * 10)), 'triangle', S.ac.currentTime, 0.07, 0.02, bus, 0.001); };
-S.chord = function(step){ if (!on()) return; const t = S.ac.currentTime, out = S.ac.createGain(); out.gain.value = 0.9; out.connect(bus); [0, 2, 3, 5].forEach((st, k) => ring(TIMBRE.bell, scaleHz(72, st + (step || 0)), t + k * 0.028, 0.6, out, 1.5)); note('chord'); };
-// Картинка улетела в галерею: взмах и «дзынь» на месте.
-S.stamp = function(){ if (!on()) return; const t = S.ac.currentTime; noise(t, 0.2, 0.1, 'bandpass', 700, 0.9, bus, 2600); osc(150, 'sine', t + 0.2, 0.4, 0.05, bus, 0.002, 80); ring(TIMBRE.glass, scaleHz(84, 5), t + 0.21, 0.8, bus, 1.5); note('gallery.stamp'); };
+// Картинка улетела в галерею: взмах и деревянный «ток» на месте.
+S.stamp = function(){ if (!on()) return; const t = S.ac.currentTime; noise(t, 0.2, 0.1, 'bandpass', 700, 0.9, bus, 2600); osc(150, 'sine', t + 0.2, 0.32, 0.05, bus, 0.002, 80); wood(scaleHz(72, 5), t + 0.21, 0.6, bus, 1.3); note('gallery.stamp'); };
 S.voices = () => voices.length;
 return S;
 })();
