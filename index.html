@@ -200,6 +200,12 @@ const CFG = {
   splashN: 2,             // брызг от каждой капли (2D-бусины)
   hitStopScale: 0.02,     // скорость игровых часов в хит-стопе (сейчас хит-стоп не вызывается: клеток слишком много, игра бы заикалась)
   dimT: 0.45,             // с: закрашенная клетка уходит из полного цвета в приглушённый (до конца картинки)
+  look: 'A',              // вид поля: 'A' — закрашенное «полом», картинка загорается в финале (v0.4.2); 'B' — закрашенное — награда: мокрая
+                          //   краска в полном цвете сразу, незакрашенное — «сырой холст» пастелью (v0.5). URL ?v=b включает Б
+  rawTint: 0.5,           // Б: сколько своего цвета в верхе доступной незакрашенной клетки — пастель «сырого холста» (чёрный — серый)
+  rawSide: 0.62,          //    и в её боках
+  rawFarTint: 0.3,        //    недоступная — бледнее (меньше своего цвета)…
+  rawFar: 0.3,            //    …ниже и ближе к холсту (доля цвета холста)
   dimTint: 0.2,           // закрашенное до конца картинки — «пол»: цвет холста чуть светлее и только 20% своего цвета (v0.4.2: не мешает считывать, что красить дальше)
   floorLift: 0.07,        // насколько «пол» закрашенного светлее холста (иначе путается с пустыми сотами)
   farH: 0.55,             // незакрашенная клетка, до которой краска пока не долетает: ниже (доля высоты блока)…
@@ -1033,7 +1039,7 @@ function startLevel(li){
     G.left[kind]++;
     G.vp.set(k, { k, i: wellOf.get(k), q, r, x, z, kind, delay: 0.15 + Math.hypot(x, z) * CFG.introStep, state: 'tile', fillAt: -9, bumpAt: -9, doneAt: -9, flashAt: -9, lit: false, reach: false, reachAt: -9 });
   }
-  G.peek = -1; updateReach(t, true);
+  G.peek = -1; G.rays = null; updateReach(t, true);
   G.shots = []; G.fills = []; G.spray = []; G.wv = new Map(); G.gone = []; G.fx = []; G.puddles = []; G.caps = []; G.splats = [];
   G.score = 0; G.barU = 0; G.combo = { n: 0, at: -9 }; G.hudKick = -9;
   G.tickN = 0; G.lastTickT = t; G.curInterval = stepInterval(st); G.nextTick = t + G.curInterval;
@@ -1220,14 +1226,21 @@ function shotArrived(c, t){
 }
 // Какие незакрашенные клетки краска уже может достать: первая стоячая клетка на прямой от ленты (то же правило, что у ядра, но по экрану:
 // клетка перестаёт загораживать, когда на неё легла краска). Открывшиеся клетки подпрыгивают — видно, что путь к ним свободен.
+// Лучи (клетки картинки по прямой от каждой клетки ленты в каждую сторону) строятся один раз на уровень — в кадре без аллокаций.
+function buildRays(){
+  const st = G.st, maxScan = st.ringR * 2 + 1; G.rays = [];
+  for (const rk of st.ring){ const [rq, rr] = UNK(rk);
+    for (const [dq, dr] of DIRS){ let q = rq, r = rr; const ray = [];
+      for (let s = 0; s < maxScan; s++){ q += dq; r += dr; const vp = G.vp.get(K(q, r)); if (vp) ray.push(vp); }
+      if (ray.length) G.rays.push(ray); } }
+}
 function updateReach(t, quiet){
   const st = G.st; if (!st) return;
-  const now = new Set(), maxScan = st.ringR * 2 + 1;
-  for (const rk of st.ring){ const [rq, rr] = UNK(rk);
-    for (const [dq, dr] of DIRS){ let q = rq, r = rr;
-      for (let s = 0; s < maxScan; s++){ q += dq; r += dr; const vp = G.vp.get(K(q, r)); if (!vp || vp.state !== 'tile') continue; now.add(vp); break; } } }
+  if (!G.rays) buildRays();
+  const mark = G.reachStamp = (G.reachStamp || 0) + 1;
+  for (const ray of G.rays) for (const vp of ray) if (vp.state === 'tile'){ vp.reachMark = mark; break; }
   for (const vp of G.vp.values()){
-    const on = now.has(vp);
+    const on = vp.reachMark === mark;
     if (on && !vp.reach){ vp.reachAt = quiet ? -9 : t; if (!quiet) G.fx.push({ type: 'glint', x: vp.x, y: CFG.tileH * L.h + 0.2, z: vp.z, t0: t, dur: 0.3, size: 0.4, col: '#ffffff' }); }
     vp.reach = on;
   }
@@ -1387,17 +1400,18 @@ function runLose(t){
 // Клетки картинки. Незакрашенная — стоячий блок в своём цвете (метки нет с v0.4.1); краска разливается от центра к краям, клетка оседает;
 // готовый пиксель — плоский, целиком своего цвета.
 function drawTiles(t){
-  const h = L.h, H = CFG.tileH * h, PH = CFG.pixelH * h, ps = h * CFG.pixelH / CFG.tileH, intro = t - G.introAt < 3.5, E = G.end && G.end.kind === 'win' ? G.end : null;
+  const h = L.h, H = CFG.tileH * h, PH = CFG.pixelH * h, ps = h * CFG.pixelH / CFG.tileH, intro = t - G.introAt < 3.5, E = G.end && G.end.kind === 'win' ? G.end : null, B = CFG.look === 'B';
   for (const vp of G.vp.values()){
     let y0 = 0, pop = 1;
     if (intro){ const iu = (t - G.introAt - vp.delay) / CFG.introDropT; if (iu <= 0) continue; if (iu < 1) y0 = (1 - iu) * (1 - iu) * 5; else pop = 1 + 0.2 * spring(t - G.introAt - vp.delay - CFG.introDropT, 30, 9); }
-    const col = COL.paint[vp.kind], blank = COL.blank[vp.kind];
+    const col = COL.paint[vp.kind], blank = B ? COL.rawTop[vp.kind] : COL.blank[vp.kind];
     if (vp.state === 'pixel'){
       const d = t - vp.doneAt; let lift = 0, glow = Math.max(0, 1 - d / 0.25) * 0.45, s = CFG.pixelGrow * (1 + (d < 0.6 ? CFG.clickSquash * spring(d, 30, 8) : 0));
       const fl = t - vp.flashAt; if (fl > 0 && fl < 0.3){ glow = Math.max(glow, (1 - fl / 0.3) * 0.7); lift = Math.sin(Math.PI * fl / 0.3) * 0.25 * h; }       // весь цвет закрашен: вспышка бежит по его пикселям
       if (E){                                                  // финал: картинка приподнята, по ней бежит волна, потом она «дышит»
         lift = CFG.winLift * E.f; const sw = E.s - CFG.winWaveAt - vp.wr * CFG.winWavePer;
-        if (sw > 0 && sw < 0.34){ lift += Math.sin(Math.PI * sw / 0.34) * CFG.winHop; glow = Math.max(glow, (1 - sw / 0.34) * 0.8); s *= 1 + 0.28 * Math.sin(Math.PI * sw / 0.34); }
+        if (sw > 0 && sw < 0.34){ const k = Math.sin(Math.PI * sw / 0.34);   // А: волна возвращает цвет (подскок, раздувание); Б: короткий блик бежит по яркой картинке
+          if (B){ lift += k * CFG.winHop * 0.4; glow = Math.max(glow, k * 0.55); s *= 1 + 0.1 * k; } else { lift += k * CFG.winHop; glow = Math.max(glow, (1 - sw / 0.34) * 0.8); s *= 1 + 0.28 * k; } }
         if (sw > 0 && !vp.waved){ vp.waved = true; if (fxRnd() < 0.16) G.fx.push({ type: 'glint', x: vp.x, y: CFG.winLift + 0.6, z: vp.z, t0: t, dur: 0.38, size: 0.55, col: fxRnd() < 0.5 ? '#ffffff' : PAL.paint[vp.kind] }); }   // волна зажигает картинку: пиксель вспыхивает полным цветом, кое-где искра
         if (E.s > E.flashS){ glow = Math.max(glow, Math.max(0, 1 - (E.s - E.flashS) / 0.5) * 0.85); lift += 0.06 * Math.sin((E.s - E.flashS) * 2.6 - vp.wr * 0.7); }
       } else { const sh = ((t * 0.5 + (vp.x + vp.z) * 0.045) % 3.2); if (sh < 0.16) glow = Math.max(glow, Math.sin(Math.PI * sh / 0.16) * 0.16); }   // редкий блик бежит по готовым пикселям
@@ -1405,8 +1419,9 @@ function drawTiles(t){
       // до конца картинки закрашенное — «пол» почти цвета холста (не спорит с тем, что ещё красить); на финале волна возвращает полный цвет
       let dim = clamp01((d - 0.12) / CFG.dimT); if (fl > 0 && fl < 0.45) dim = Math.min(dim, fl / 0.45);
       if (E){ const sw = E.s - CFG.winWaveAt - vp.wr * CFG.winWavePer; dim = sw > 0 ? 0 : 1; }
-      const pc = dim > 0 ? mix3(col, COL.paintDim[vp.kind], dim) : col, seam = dim > 0 ? mix3(pc, COL.floorSeam, dim) : null;
-      R3.tile(vp.x, PH / 2 + y0 + lift, vp.z, null, h * s, ps, pc, 0, null, glow, seam, null, pc, 1);
+      if (B) dim = 0;                                                    // вид Б: закрашенное — награда, сразу в полном цвете
+      const pc = dim >= 1 ? COL.paintDim[vp.kind] : dim > 0 ? mix3(col, COL.paintDim[vp.kind], dim) : col, seam = dim >= 1 ? COL.floorSeam : dim > 0 ? mix3(pc, COL.floorSeam, dim) : null;
+      R3.tile(vp.x, PH / 2 + y0 + lift, vp.z, null, h * s, ps, pc, 0, null, glow, seam, null, pc, B ? 2 : 1);
       continue;
     }
     if (vp.state === 'fill'){                                  // краска разливается от центра к краям, клетка оседает в пиксель
@@ -1419,9 +1434,10 @@ function drawTiles(t){
     let sy = pop * (vp.reach ? 1 : CFG.farH), rimA = 0;
     if (vp.reach){ const ra = t - vp.reachAt; sy *= 1 + CFG.reachLift * (ra < 0.5 ? 1 + 1.4 * spring(ra, 24, 7) : 1); rimA = CFG.reachRim;
       if (G.peek === vp.kind) rimA = mix(CFG.reachRim, CFG.peekRim, 0.5 + 0.5 * Math.sin(t * 9)); }
-    const rim = rimA > 0 ? mix3(blank, COL.white, rimA) : null;
-    R3.tile(vp.x, H / 2 * sy + y0, vp.z, null, h * pop, h * sy, vp.reach ? blank : COL.blankFar[vp.kind], 0, col, G.peek === vp.kind && vp.reach ? 0.12 : 0, rim, null, vp.reach ? col : COL.farSide[vp.kind], 0);
-    if (y0 < 2) R3.shadow(vp.x, vp.z, CFG.tileR * 1.3 * h, 0.5);
+    const rim = rimA <= 0 ? null : rimA === CFG.reachRim ? (B ? COL.rawRim : COL.blankRim)[vp.kind] : mix3(blank, COL.white, rimA);   // постоянная кромка — из кэша (без аллокаций в кадре)
+    const top = vp.reach ? blank : B ? COL.rawFarTop[vp.kind] : COL.blankFar[vp.kind], side = B ? (vp.reach ? COL.rawSideC[vp.kind] : COL.rawFarSide[vp.kind]) : vp.reach ? col : COL.farSide[vp.kind];
+    R3.tile(vp.x, H / 2 * sy + y0, vp.z, null, h * pop, h * sy, top, 0, col, G.peek === vp.kind && vp.reach ? 0.12 : 0, rim, null, side, 0);
+    if (y0 < 2) R3.shadow(vp.x, vp.z, CFG.tileR * 1.3 * h, vp.reach ? (B ? 0.65 : 0.5) : 0.3);
   }
 }
 // Тюбики. Лежат носиком к картинке: в очереди и на полке — вправо, на ленте — внутрь, к холсту, и перед выстрелом доворачивают носик
@@ -1572,13 +1588,21 @@ function drawStar(c, x, y, size, a, col, rot){
 // Цель уровня — карточка на верхней панели: мини-картинка (несобранные клетки — силуэтом, собранные — в цвете), под ней полоска и счёт пикселей.
 // Искра от лёгшего пикселя долетела — клетка на карточке вспыхивает цветом, карточка подпрыгивает. В финале карточка гаснет: герой — сама картинка.
 function goalPose(){ return { x: VW / 2, y: CFG.goalPx / 2 + 14, s: CFG.goalPx }; }
+// Мини-картинка цели — в своём холсте, перерисовывается только когда легла клетка (раньше — каждую клетку каждый кадр: ~40 КБ мусора на кадр).
+const goalCv = document.createElement('canvas'); let goalKey = '';
+function goalCache(w, h){
+  const key = G.li + ':' + G.pixDone + ':' + DPR + ':' + G.introAt; if (key === goalKey) return goalCv; goalKey = key;
+  const bw = w * 0.82, bh = h * 0.86; goalCv.width = Math.ceil(bw * DPR); goalCv.height = Math.ceil(bh * DPR);
+  const c = goalCv.getContext('2d'); c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(0, 0, bw, bh);
+  drawPic(c, G.li, bw / 2, bh / 2, bw, bh, (cell) => { const vp = G.vp.get(cell.k); return !!vp && vp.state === 'pixel'; }, PAL.ghost);
+  return goalCv;
+}
 function drawGoal(c, t){
   const g = goalPose(), fade = G.end && G.end.kind === 'win' ? 1 - clamp01(G.end.s / 0.3) : 1; if (fade <= 0.01) return;
   const ks = t - G.hudKick, k = 1 + (ks < 0.3 ? 0.03 * spring(ks, 30, 8) : 0), w = g.s * 1.3 * k, h = g.s * k;
   c.globalAlpha = fade;
   c.fillStyle = PAL.pill; c.beginPath(); c.roundRect(g.x - w / 2, g.y - h / 2, w, h, 16); c.fill(); c.lineWidth = 2; c.strokeStyle = 'rgba(255,255,255,.12)'; c.stroke();
-  drawPic(c, G.li, g.x, g.y, w * 0.82, h * 0.86,
-          (cell) => { const vp = G.vp.get(cell.k); return !!vp && vp.state === 'pixel'; }, PAL.ghost);
+  const gc = goalCache(g.s * 1.3, g.s); c.drawImage(gc, g.x - w * 0.41, g.y - h * 0.43, w * 0.82, h * 0.86);
   const bw = 104, x0 = g.x - bw / 2, y0 = g.y + g.s / 2 + 7;
   c.fillStyle = PAL.pill; c.beginPath(); c.roundRect(x0, y0, bw, 18, 9); c.fill();
   if (G.barU > 0.005){ c.fillStyle = PAL.accent; c.beginPath(); c.roundRect(x0 + 2.5, y0 + 2.5, Math.max(13, (bw - 5) * G.barU), 13, 6.5); c.fill(); }
@@ -1720,6 +1744,7 @@ function tick(){
   if (G.st && (G.screen === 'game' || G.screen === 'win' || G.screen === 'lose')){ advance(t); draw(t); }
   if (toastUntil && p0 > toastUntil){ $('toast').classList.add('hide'); toastUntil = 0; }
   perf.cpu.push(performance.now() - p0); if (perf.cpu.length > 240) perf.cpu.shift();
+  if (!perf.firstGame && G.screen === 'game' && G.st){ perf.firstGame = performance.now(); perf.firstDraw = perf.firstGame - p0; }   // первый кадр игры: когда и сколько стоил (прогрев шейдеров)
 }
 function frame(){
   const p = performance.now();
@@ -1759,7 +1784,7 @@ window.RASKRASKA = {
   perf(){                                          // замер кадра: интервалы rAF и время своего кода за последние 240 кадров
     const s = perf.dt.slice().sort((a, b) => a - b), c = perf.cpu.slice().sort((a, b) => a - b), avg = s.reduce((a, b) => a + b, 0) / Math.max(1, s.length);
     return { frames: s.length, fps: +(1000 / avg).toFixed(1), avgMs: +avg.toFixed(2), p95Ms: +(s[Math.floor(s.length * 0.95)] || 0).toFixed(2), maxMs: +(s[s.length - 1] || 0).toFixed(2),
-             over20: s.filter(x => x > 20).length, cpuAvgMs: +(c.reduce((a, b) => a + b, 0) / Math.max(1, c.length)).toFixed(2), cpuP95Ms: +(c[Math.floor(c.length * 0.95)] || 0).toFixed(2), dpr: DPR, scene: R3.stats() };
+             over20: s.filter(x => x > 20).length, firstGameMs: Math.round(perf.firstGame || 0), firstDrawMs: +(perf.firstDraw || 0).toFixed(1), cpuAvgMs: +(c.reduce((a, b) => a + b, 0) / Math.max(1, c.length)).toFixed(2), cpuP95Ms: +(c[Math.floor(c.length * 0.95)] || 0).toFixed(2), dpr: DPR, scene: R3.stats() };
   },
   bench(frames){                                   // стоимость кадра без ожидания rAF: n кадров подряд, мс на кадр (свой код + отправка в GPU)
     const n = frames || 120, p0 = performance.now(); for (let i = 0; i < n; i++){ Clock.off += 1000 / 60; const t = now(); advance(t); draw(t); } return +((performance.now() - p0) / n).toFixed(3);
@@ -1775,8 +1800,12 @@ window.RASKRASKA = {
   const lumC = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11;
   const floor = mix3(board, [1, 1, 1], CFG.floorLift);
   COL.paintDim = COL.paint.map(c => mix3(floor, c, CFG.dimTint * (lumC(c) < 0.3 ? 0.6 : 1)));   // закрашенное до финала — «пол» с лёгким оттенком своего цвета
-  COL.floorSeam = mix3(floor, [1, 1, 1], 0.16);                                                   // светлый шов «плитки пола» по кромке закрашенной клетки
+  if (/[?&]v=b(&|$)/i.test(location.search)) CFG.look = 'B';
+  COL.rawTop = COL.paint.map(c => mix3(R3.rgb(css('--blank')), c, CFG.rawTint)); COL.rawSideC = COL.paint.map(c => mix3(R3.rgb(css('--blank')), c, CFG.rawSide));
+  COL.rawFarTop = COL.paint.map(c => mix3(mix3(R3.rgb(css('--blank')), c, CFG.rawFarTint), board, CFG.rawFar)); COL.rawFarSide = COL.rawSideC.map(c => mix3(c, board, CFG.rawFar + 0.15));
+  COL.floorSeam = mix3(floor, [1, 1, 1], 0.16);                                                  // светлый шов «плитки пола» по кромке закрашенной клетки
   COL.blankBase = R3.rgb(css('--blank')); COL.blank = COL.paint.map(c => mix3(COL.blankBase, c, CFG.blankTint)); COL.blankFar = COL.blank.map(c => mix3(c, board, CFG.farDark)); COL.farSide = COL.paint.map(c => mix3(c, board, CFG.farDark * 0.85));   // недостижимые пока клетки — чуть темнее (сильнее — путаются с приглушённым закрашенным)
+  COL.blankRim = COL.blank.map(c => mix3(c, COL.white, CFG.reachRim)); COL.rawRim = COL.rawTop.map(c => mix3(c, COL.white, CFG.reachRim));   // постоянная кромка доступной клетки
   COL.paper = R3.rgb(css('--paper')); COL.secret = R3.rgb(css('--secret')); COL.secretDark = mix3(COL.secret, ink, 0.68);
   // тюбики: у тёмных красок контур светлый (иначе чёрный тюбик — дырка в тёмном фоне), крышка контрастная корпусу
   const lum = (c) => c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11, edgeLight = R3.rgb('#c9cdf0');

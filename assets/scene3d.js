@@ -94,7 +94,7 @@ varying vec3 vN; varying vec3 vLP; varying vec3 vLN; varying vec4 vFace; varying
 void main(){
   vec3 N = normalize(vN);
   vec2 p = vLP.xz / uR;
-  float mode = vBack.a;
+  float mode = min(vBack.a, 1.0), wet = max(vBack.a - 1.0, 0.0);   // 0 — незакрашенная, 1 — готовый пиксель, 2 — «мокрая» краска (вид Б)
   vec3 col;
   if (vLN.y > 0.9){                                            // лицо
     col = vFace.rgb;
@@ -107,6 +107,10 @@ void main(){
       col = mix(col, bc, inB);
     }
     col += mode * 0.06 * smoothstep(0.35, -0.75, p.x * 0.6 + p.y);     // готовый пиксель: лёгкий глянец к свету
+    if (wet > 0.0){                                                       // вид Б: мокрая краска — глянец к свету и короткий блик у левого верхнего края
+      col = mix(col, vec3(1.0), wet * 0.1 * smoothstep(0.3, -0.9, p.x * 0.6 + p.y));
+      col = mix(col, vec3(1.0), wet * 0.42 * smoothstep(0.3, 0.12, length((p - vec2(-0.32, -0.38)) * vec2(1.0, 1.7))));
+    }
     if (vRim1.a > 0.0) col = mix(col, vRim1.rgb, smoothstep(0.8, 0.88, hexd(p)) * vRim1.a);   // светлая кромка: достижимая клетка; тёмный пиксель на тёмном холсте
   } else if (vLN.y < -0.9){
     col = vBack.rgb;
@@ -503,7 +507,8 @@ R.tubeQ = quatYT; R.rotQ = rotQ;
 R.carrier = function(x, y, z, yaw, tilt, sxz, sy, col, dark, flash, roll, flat, sq, inflate, cap, capCol, spin){
   const i = bodies.n; if (i >= bodies.cap) return; bodies.n++; outlines.n++;
   const q = quatYT(yaw, tilt);
-  for (const b of [bodies, outlines]){ quatMatrix(b.mx, i * 16, x, y, z, q[0], q[1], q[2], q[3], sxz, sy, sxz); set4(b.aT.array, i, [roll || 0, flat || 0, sq || 0], inflate || 0); }
+  quatMatrix(bodies.mx, i * 16, x, y, z, q[0], q[1], q[2], q[3], sxz, sy, sxz); quatMatrix(outlines.mx, i * 16, x, y, z, q[0], q[1], q[2], q[3], sxz, sy, sxz);
+  for (const A of [bodies.aT.array, outlines.aT.array]){ A[i * 4] = roll || 0; A[i * 4 + 1] = flat || 0; A[i * 4 + 2] = sq || 0; A[i * 4 + 3] = inflate || 0; }
   set4(bodies.aCol.array, i, col, flash || 0); set4(outlines.aCol.array, i, dark, 0);
   if (cap && caps.n < caps.cap){ const j = caps.n++; capOut.n++;
     quatMatrix(caps.mx, j * 16, x, y, z, q[0], q[1], q[2], q[3], sxz * (1 + 0.25 * (inflate || 0)), sy, sxz); quatMatrix(capOut.mx, j * 16, x, y, z, q[0], q[1], q[2], q[3], sxz, sy, sxz);
