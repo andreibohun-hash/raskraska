@@ -36,13 +36,6 @@ header .pill{background:var(--pill);border-radius:999px;padding:7px 14px;font-si
 header .sp{flex:1}
 header button{pointer-events:auto;width:40px;height:40px;padding:0;border-radius:13px;background:var(--pill);box-shadow:inset 0 0 0 2px rgba(255,255,255,.08);display:grid;place-items:center}
 header svg{width:20px;height:20px;fill:none;stroke:var(--ink);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
-/* Нижняя панель бустеров — как в Hexa Glide: плашка с золотой кромкой, три круглые кнопки на ней, счётчик на каждой. */
-#bar{position:absolute;left:0;right:0;bottom:0;height:calc(58px + env(safe-area-inset-bottom));background:var(--bar);border-top:4px solid var(--bar-line);display:flex;justify-content:center;gap:22px;pointer-events:none}
-#bar button{pointer-events:auto;position:relative;top:-34px;width:72px;height:72px;padding:0;border-radius:50%;background:radial-gradient(circle at 50% 35%,#fff8e6 0%,#f3e2bd 70%,#dcc594 100%);box-shadow:0 0 0 4px #b98a2c,0 5px 0 4px rgba(0,0,0,.25);display:grid;place-items:center}
-#bar button:active{transform:translateY(3px)}
-#bar img{width:52px;height:52px;object-fit:contain;pointer-events:none}
-#bar i{position:absolute;right:-6px;bottom:-4px;min-width:26px;height:26px;border-radius:13px;background:#2f8cf0;box-shadow:0 0 0 3px #fff;font:900 15px/26px "Nunito",sans-serif;font-style:normal;text-align:center;color:#fff}
-#bar.hide{display:none}
 button{font:inherit;font-weight:900;color:var(--ink);background:#4a5199;border:0;border-radius:16px;padding:12px 20px;cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.28)}
 button:active{transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.28)}
 button.primary{background:linear-gradient(180deg,#ffd75a,#ffb21f);color:#4a2c00;box-shadow:0 4px 0 #b97a12}
@@ -91,11 +84,6 @@ button.primary{background:linear-gradient(180deg,#ffd75a,#ffb21f);color:#4a2c00;
     <button id="btn-reset" aria-label="заново"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></svg></button>
     <button id="btn-menu" aria-label="меню"><svg viewBox="0 0 24 24"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button>
   </header>
-  <div id="bar">
-    <button data-act="boost" data-b="shuffle"><img src="assets/ui/b-shuffle.png" alt=""><i>3</i></button>
-    <button data-act="boost" data-b="hand"><img src="assets/ui/b-hand.png" alt=""><i>3</i></button>
-    <button data-act="boost" data-b="wild"><img src="assets/ui/b-wild.png" alt=""><i>3</i></button>
-  </div>
   <button id="revive" class="hide" data-act="revive">+1 место<small>AD</small></button>
   <div id="end" class="hide"></div>
   <canvas id="flypic" class="hide" width="240" height="240"></canvas>
@@ -177,7 +165,7 @@ const CFG = {
   slotR: 1.3,             //        радиус места
   queueZ: 16.1,           // очередь: первый ряд
   queueDX: 3.3,           //          шаг колонок
-  queueDZ: 2.55,          //          шаг рядов (все три ряда над панелью бустеров: тюбики лежат и в ряду не наползают друг на друга)
+  queueDZ: 2.55,          //          шаг рядов (все три ряда в кадре: тюбики лежат и в ряду не наползают друг на друга)
   carrierR: 1.0,          // радиус полной капельки на ленте
   carrierMin: 0.8,        // масштаб капельки с одной каплей
   carrierFull: 12,        // капель в «полной» капельке (масштаб 1)
@@ -193,11 +181,10 @@ const CFG = {
   ringScale: 1.3, ringMin: 0.52, ringMax: 0.8,                      // тюбик на ленте: в клетках, но не мельче и не крупнее этих пределов
   slotScale: 1.0, queueScale: 1.12,                                 // тюбик на полке / в очереди (в Hexa Glide очередь тоже крупнее поля)
   hudTopPx: 116,          // px: место сверху под цель (мини-картинка и счёт пикселей)
-  barPx: 100,             // px: панель бустеров снизу вместе с круглыми кнопками (они выступают над панелью на 38 px)
-  topBias: 0.7,           // какую долю лишней высоты экрана отдать низу (поле прижимается к верхней панели)
+  barPx: 26,              // px: отступ снизу под очередью (панели бустеров нет с v0.4.1 — были заглушки)
+  topBias: 0.45,          // какую долю лишней высоты экрана отдать низу (поле прижимается к верхней панели)
   goalPx: 66,             // px: карточка с мини-картинкой
   maxTiles: 420, maxDrops: 500, maxCarriers: 40,                    // потолки инстансов
-  boosters: { shuffle: 3, hand: 3, wild: 3 },   // бустеры — пока заглушки: кнопки и счётчики есть, действия нет
 
   // --- фил (тюнить на телефоне) ---
   tapSquashT: 0.06,       // с: капелька сжимается перед прыжком
@@ -969,7 +956,6 @@ function goto(screen){
   ov.classList.toggle('show', screen === 'menu' || screen === 'help');
   end.classList.toggle('hide', screen !== 'win' && screen !== 'lose');
   $('revive').classList.toggle('hide', screen !== 'lose');
-  $('bar').classList.toggle('hide', screen !== 'game');
   if (screen !== 'win') $('flypic').classList.add('hide');
   if (screen === 'menu'){
     let lv = ''; const got = Object.keys(G.save.best).length;
@@ -1012,7 +998,6 @@ $('frame').addEventListener('click', (e) => {
   else if (act === 'unlock' || act === 'relock'){ setUnlockAll(act === 'unlock'); goto('menu'); }
   else if (act === 'wipe'){ G.save = { level: 0, muted: G.save.muted, best: {}, unlockAll: false, coins: 0 }; save(); goto('menu'); }
   else if (act === 'revive') toast('Заглушка: здесь будет шестое место за рекламу');
-  else if (act === 'boost') toast('Бустер пока не работает — заглушка');
   else if (act === 'mute'){ G.save.muted = !G.save.muted; Sfx.setMuted(G.save.muted); save(); goto('menu'); }
   else goto('menu');
 });
@@ -1597,12 +1582,11 @@ function drawGoal(c, t){
   drawLabel(c, G.pixDone + ' / ' + G.pixTotal, g.x, y0 + 9.5, 12.5, '#fff', 'rgba(20,22,50,.85)');
   c.globalAlpha = 1;
 }
-// Вместимость ленты «2/5» у левого края — как в Hexa Glide (зелёный плюс — покупка места, заглушка).
+// Вместимость ленты «2/5» у левого края — как в Hexa Glide (плюс-покупку места убрали в v0.4.1: был заглушкой).
 function drawCapacity(c){
   const st = G.st, p = R3.project(-CFG.trackAp + 0.2, 0, CFG.trackAp * 0.66), x = Math.max(36, p[0]), y = p[1], n = st.travelers.length, full = n >= st.capacity;
   c.fillStyle = PAL.pill; c.beginPath(); c.roundRect(x - 30, y - 14, 58, 28, 10); c.fill(); c.lineWidth = 2; c.strokeStyle = full ? PAL.danger : 'rgba(255,255,255,.16)'; c.stroke();
-  drawLabel(c, n + '/' + st.capacity, x - 3, y + 1, 15, full ? '#ff97a1' : '#fff');
-  c.fillStyle = PAL.ok; c.beginPath(); c.arc(x + 27, y + 11, 9, 0, TAU); c.fill(); c.lineWidth = 2; c.strokeStyle = '#fff'; c.stroke(); drawLabel(c, '+', x + 27, y + 11.5, 15, '#fff');
+  drawLabel(c, n + '/' + st.capacity, x - 1, y + 1, 15, full ? '#ff97a1' : '#fff');
 }
 // Верёвочка между капельками связки: линия от края до края с лёгким провисом.
 function drawBand(c, a, b, k){

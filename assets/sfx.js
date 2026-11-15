@@ -2,11 +2,11 @@
 /* =====================================================================================================
    assets/sfx.js — звук «Раскраски»: WebAudio-синтез, ни одного файла (PROTO-BASE §8).
 
-   Звук мокрый и тактильный, без колокольчиков и стекла (v0.4.1, просьба Андрея: «колокол → сатисфайный»).
-   Главное — клетка закрашена: густой «шмяк/чвяк» — шлепок шума через низкий фильтр, влажное «ч» и короткий «плоп» с падающим
-   тоном. Лесенка мягкая: от клетки к клетке сдвигаются частоты фильтра и плопа (у каждой краски своя основа), с разбросом —
-   сотни подряд не звенят и не утомляют. Веха серии — сочный «поп» выдавленной краски, каждая следующая выше и плотнее.
-   Цвет закрашен, финал, галерея — дерево (маримба): мягкий щипок с коротким хвостом и пухлый «пуф» с шелестом.
+   Звук басистый, мокрый и тактильный: ни колокольчиков, ни стекла, ни маримбы, ни высоких звонов (v0.4.1, Андрей: «колокол убрать
+   совсем, вместо — что-то басистое и сатисфайное»). Основа — «тумп»: саб-синус с быстрым падением тона и приглушённый шум низким фильтром.
+   Клетка закрашена — низкий сочный «чвяк»: шлепок шума через низкий фильтр и короткий плоп с падающим тоном. Лесенка мягкая: от клетки
+   к клетке сдвигаются частоты фильтра и плопа (у каждой краски своя основа), с разбросом — сотни подряд не утомляют.
+   Веха серии — плотный басовый «поп», каждая следующая чуть выше и плотнее. Цвет закрашен и финал — глубокий тёплый удар.
    Звенящих голосов не больше CFG.sfx.maxVoices: новый голос глушит самый старый.
    Случайность — свой генератор с сидом (Math.random не используется).
    ===================================================================================================== */
@@ -82,45 +82,44 @@ function plop(f0, t, vel, dest, dur){
   g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.3 * vel, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.03);
   o.connect(g); g.connect(dest); o.start(t); o.stop(t + d + 0.05);
 }
-// Дерево (маримба): основа с коротким хвостом, обертон ×3,93 гаснет мгновенно, мягкий стук колотушки. long — множитель хвоста.
-function wood(f0, t, vel, dest, long){
-  osc(f0, 'sine', t, 0.26 * vel * loud(f0), 0.11 * (long || 1), dest, 0.002);
-  osc(f0 * 3.93, 'sine', t, 0.05 * vel * loud(f0 * 3.93), 0.014, dest, 0.001);
-  noise(t, 0.012, 0.08 * vel, 'lowpass', 1600, 0.7, dest);
+// «Тумп»: саб-синус падает по тону от f0·2 до f0·0,6 и мягкий шум низким фильтром — басовый мокрый удар. long — длина хвоста.
+function thump(f0, t, vel, dest, long){
+  const L = long || 1;
+  osc(f0 * 2, 'sine', t, 0.42 * vel, 0.05 * L, dest, 0.003, f0 * 0.6);
+  noise(t, 0.09 * L, 0.16 * vel, 'lowpass', 420, 0.7, dest, 110);
 }
 // Клетка закрашена: «шмяк» густой краски. kind — краска (своя основа), i — ступень лесенки (0…9), vel — сила.
 S.plip = function(kind, i, vel, delay){
   if (!on()) return; const t = S.ac.currentTime + (delay || 0), v = vel === undefined ? 1 : vel, out = claimVoice(t, 0.2);
   const st = ladderStep(i), k = Math.pow(2, (paintNote(kind) - 66) / 48) * (1 + 0.035 * st) * jit(0.07);
-  noise(t, 0.07 * jit(0.15), 0.27 * v, 'lowpass', (520 + 60 * st) * k * jit(0.2), 0.9, out, 170);   // шлепок
-  noise(t, 0.025, 0.06 * v, 'bandpass', 1500 * k * jit(0.2), 1.1, out, 600);                       // влажное «ч»
-  plop(170 * k, t + 0.004, 0.75 * v, out, 0.06 * jit(0.15));                                       // плоп
+  noise(t, 0.07 * jit(0.15), 0.28 * v, 'lowpass', (340 + 40 * st) * k * jit(0.2), 0.9, out, 120);   // низкий шлепок
+  noise(t, 0.022, 0.05 * v, 'bandpass', 800 * k * jit(0.2), 1.1, out, 350);                        // влажное «ч», приглушённое
+  plop(105 * k, t + 0.004, 0.85 * v, out, 0.065 * jit(0.15));                                      // низкий плоп
 };
-// Веха серии: сочный «поп» выдавленной краски; step — номер вехи, каждая выше и плотнее (с 3-й — второй пузырь, с 6-й — хлюп).
+// Веха серии: плотный басовый «поп»; step — номер вехи, каждая выше и плотнее (с 3-й — второй пузырь, с 6-й — второй удар).
 S.pop = function(step){
   if (!on()) return; const t = S.ac.currentTime, s = Math.min(8, step || 0), f = Math.pow(1.07, s), out = claimVoice(t, 0.3);
-  plop(260 * f, t, 0.9, out, 0.09); noise(t, 0.05, 0.18, 'bandpass', 900 * f, 1.4, out, 350);
-  if (s >= 2) plop(390 * f, t + 0.035, 0.4 + 0.05 * s, out, 0.06);
-  if (s >= 5) noise(t + 0.02, 0.08, 0.1, 'lowpass', 700, 0.8, out, 200);
+  thump(55 * f, t, 0.8, out); plop(120 * f, t + 0.005, 0.8, out, 0.09); noise(t, 0.05, 0.14, 'lowpass', 600 * f, 0.9, out, 180);
+  if (s >= 2) plop(160 * f, t + 0.04, 0.35 + 0.05 * s, out, 0.07);
+  if (s >= 5) thump(45 * f, t + 0.06, 0.5, out, 0.8);
   note('combo.pop', 'step=' + s);
 };
-// Цвет закрашен целиком: большой хлюп и два деревянных щипка в ноту краски (combo — сдвиг на ступень).
+// Цвет закрашен целиком: большой хлюп и глубокий басовый удар (combo — чуть выше на ступень).
 S.flood = function(kind, combo){
-  if (!on()) return; const t = S.ac.currentTime, c = Math.min(combo, 9), base = paintNote(kind) - 12;
+  if (!on()) return; const t = S.ac.currentTime, c = Math.min(combo, 9);
   const out = S.ac.createGain(); out.gain.value = 0.9; out.connect(bus);
-  noise(t, 0.22, 0.24, 'lowpass', 1400, 0.7, out, 180); plop(140, t, 1, out, 0.12); plop(220, t + 0.05, 0.6, out, 0.09);
-  wood(scaleHz(base, c), t + 0.06, 0.8, out, 1.4); wood(scaleHz(base, c + 2), t + 0.13, 0.7, out, 1.4);
-  note('flood.wood', 'paint=' + CFG.paints[kind].id + ' combo=' + (combo + 1));
+  noise(t, 0.22, 0.22, 'lowpass', 900, 0.7, out, 140); plop(100, t, 1, out, 0.12); thump(48 * Math.pow(1.04, c), t + 0.02, 0.9, out, 1.3);
+  note('flood.thump', 'paint=' + CFG.paints[kind].id + ' combo=' + (combo + 1));
 };
 // Плитка переворачивается: короткий взмах.
 S.flip = function(){ if (!on()) return; noise(S.ac.currentTime, 0.16, 0.09, 'bandpass', 900, 0.9, bus, 3200); };
-// Пиксель лёг на место: глухой стук и деревянный щипок; step — ступень.
+// Пиксель лёг на место: глухой басовый стук; step — ступень.
 S.click = function(step, vel){
   if (!on()) return; const t = S.ac.currentTime, v = vel === undefined ? 1 : vel, out = claimVoice(t, 0.4);
-  osc(190, 'sine', t, 0.3 * v, 0.03, out, 0.001, 110); wood(scaleHz(72, step || 0), t + 0.005, 0.7 * v, out);
+  thump(60 * (1 + 0.04 * (step || 0)), t, 0.8 * v, out);
   note('pixel.click');
 };
-S.ding = function(kind){ if (!on()) return; const t = S.ac.currentTime + 0.03, out = claimVoice(t, 0.4); wood(scaleHz(paintNote(kind), 5), t, 0.7, out, 1.4); note('layer.ding', CFG.paints[kind].id); };
+S.ding = function(kind){ if (!on()) return; const t = S.ac.currentTime + 0.03, out = claimVoice(t, 0.4); thump(65, t, 0.7, out); note('layer.ding', CFG.paints[kind].id); };
 // Капелька-перевозчик: упругий «боньк» + тихий буль её краски.
 S.carrierTap = function(kind){
   if (!on()) return; const t = S.ac.currentTime;
@@ -146,21 +145,21 @@ S.tubeCrunch = function(){
   osc(340, 'sawtooth', t + 0.02, 0.025, 0.06, bus, 0.01, 520);                           // скрип
   note('tube.crunch');
 };
-// Рулончик улетел: взмах и искорка.
+// Рулончик улетел: взмах и мягкий плоп.
 S.carrierGone = function(){
   if (!on()) return; const t = S.ac.currentTime;
-  noise(t, 0.16, 0.08, 'bandpass', 900, 0.9, bus, 3800); osc(hz(91), 'sine', t + 0.05, 0.07, 0.09, bus); osc(hz(96), 'sine', t + 0.1, 0.045, 0.08, bus); note('carrier.gone');
+  noise(t, 0.16, 0.08, 'bandpass', 900, 0.9, bus, 3800); plop(140, t + 0.04, 0.5, bus, 0.08); note('carrier.gone');
 };
 S.reject = function(){ if (!on()) return; const t = S.ac.currentTime; osc(170, 'triangle', t, 0.28, 0.035, bus, 0.002, 120); osc(140, 'triangle', t + 0.09, 0.26, 0.04, bus, 0.002, 100); note('reject'); };
 // Пломба «?» отщёлкнулась: сухой «щёлк», шорох и два буля краски.
-S.reveal = function(kind){ if (!on()) return; const t = S.ac.currentTime; noise(t, 0.012, 0.3, 'bandpass', 3800, 2, bus); osc(1500, 'triangle', t, 0.06, 0.012, bus, 0.001, 900); noise(t + 0.03, 0.1, 0.1, 'bandpass', 1800, 1, bus, 5000); S.plip(kind, 5, 0.5, 0.05); S.plip(kind, 7, 0.4, 0.12); note('secret.reveal'); };
+S.reveal = function(kind){ if (!on()) return; const t = S.ac.currentTime; noise(t, 0.012, 0.3, 'bandpass', 3800, 2, bus); noise(t + 0.03, 0.1, 0.1, 'bandpass', 1800, 1, bus, 5000); S.plip(kind, 5, 0.5, 0.05); S.plip(kind, 7, 0.4, 0.12); note('secret.reveal'); };
 S.tick = function(){ if (!on()) return; const t = S.ac.currentTime; if (t - tickAt < 0.2) return; tickAt = t; osc(1900, 'square', t, 0.035, 0.008, bus, 0.001); osc(1200, 'sine', t, 0.03, 0.012, bus, 0.001); };
 let uiN = 0;
 S.ui = function(){ if (!on()) return; S.plip(0, 3 + (uiN++ % 3), 0.5); };                 // кнопки булькают
-// Каскад на старте уровня: плитки выкладываются на холст — короткая лесенка щелчков вверх.
+// Каскад на старте уровня: плитки выкладываются на холст — короткая лесенка мягких плопов.
 S.cascade = function(n){
   if (!on()) return; const t = S.ac.currentTime;
-  for (let i = 0; i < Math.min(12, n); i++){ const tt = t + 0.1 + i * 0.055; noise(tt, 0.012, 0.12, 'bandpass', 3600 * jit(0.1), 1.6); osc(scaleHz(72, i % 10), 'sine', tt, 0.05, 0.04, bus, 0.001); }
+  for (let i = 0; i < Math.min(12, n); i++){ const tt = t + 0.1 + i * 0.055; noise(tt, 0.012, 0.12, 'bandpass', 3600 * jit(0.1), 1.6); plop(90 * (1 + 0.04 * (i % 10)), tt, 0.25, bus, 0.04); }
   note('level.cascade');
 };
 // Шелест летящей краски: уровень 0…1 (сколько капель в воздухе).
@@ -176,18 +175,17 @@ S.spill = function(kinds, delay){ if (!on()) return; const d0 = delay || 0;
   for (let i = 0; i < 6; i++) noise(S.ac.currentTime + d0 + i * 0.035, 0.05, 0.16, 'lowpass', 1400, 0.8, bus, 300);        // тюбики лопаются
   kinds.forEach((k, i) => S.plip(k, 8 - (i % 8), 0.45 + rnd() * 0.3, d0 + 0.02 + i * 0.05 + rnd() * 0.03)); osc(98, 'sawtooth', S.ac.currentTime, 0.12, 0.2, bus, 0.01, 46); note('lose.spill'); };
 S.lose = function(){ if (!on()) return; const t = S.ac.currentTime; osc(hz(55), 'triangle', t, 0.2, 0.25, bus, 0.01, hz(48)); osc(hz(58), 'triangle', t + 0.02, 0.14, 0.25, bus, 0.01, hz(51)); note('lose'); };
-// Финал. Волна по картинке: каждый пиксель — деревянный щипок своей ступени (i растёт от центра к краям).
-S.pixelWave = function(i){ if (!on()) return; const t = S.ac.currentTime, out = claimVoice(t, 0.4); wood(scaleHz(60, i), t, 0.55, out, 1.1); };
-// Вспышка готовой картинки: пухлый «пуф» с шелестом, мягкий низ и арпеджио маримбы.
+// Финал. Волна по картинке: каждый пиксель — мягкий басовый плоп своей ступени (i растёт от центра к краям).
+S.pixelWave = function(i){ if (!on()) return; const t = S.ac.currentTime, out = claimVoice(t, 0.3); plop(80 * (1 + 0.05 * i), t, 0.45, out, 0.08); noise(t, 0.05, 0.08, 'lowpass', 500, 0.8, out, 150); };
+// Вспышка готовой картинки: глубокий тёплый удар — длинный саб-«тумп», мокрый «пуф» низким фильтром и второй удар следом.
 S.winFlash = function(){
   if (!on()) return; const t = S.ac.currentTime, out = S.ac.createGain(); out.gain.value = 1; out.connect(bus);
-  osc(110, 'sine', t, 0.45, 0.1, out, 0.004, 55); noise(t, 0.45, 0.22, 'lowpass', 900, 0.7, out, 260); noise(t + 0.03, 0.3, 0.05, 'highpass', 3000, 0.6, out, 6000);
-  [0, 2, 4, 5, 7].forEach((st, k) => wood(scaleHz(60, st), t + 0.05 + k * 0.07, 0.75, out, 1.8));
-  osc(hz(36), 'sine', t, 0.25, 0.3, out); note('win');
+  thump(40, t, 1, out, 3); noise(t, 0.5, 0.22, 'lowpass', 700, 0.7, out, 160); plop(110, t + 0.01, 0.8, out, 0.16);
+  thump(52, t + 0.18, 0.6, out, 2); osc(hz(36), 'sine', t, 0.25, 0.3, out); note('win');
 };
-S.countTick = function(u){ if (!on()) return; osc(scaleHz(72, Math.floor(u * 10)), 'triangle', S.ac.currentTime, 0.07, 0.02, bus, 0.001); };
-// Картинка улетела в галерею: взмах и деревянный «ток» на месте.
-S.stamp = function(){ if (!on()) return; const t = S.ac.currentTime; noise(t, 0.2, 0.1, 'bandpass', 700, 0.9, bus, 2600); osc(150, 'sine', t + 0.2, 0.32, 0.05, bus, 0.002, 80); wood(scaleHz(72, 5), t + 0.21, 0.6, bus, 1.3); note('gallery.stamp'); };
+S.countTick = function(u){ if (!on()) return; plop(90 * (1 + 0.06 * Math.floor(u * 10)), S.ac.currentTime, 0.35, bus, 0.04); };
+// Картинка улетела в галерею: взмах и басовый «тумп» на месте.
+S.stamp = function(){ if (!on()) return; const t = S.ac.currentTime; noise(t, 0.2, 0.1, 'bandpass', 700, 0.9, bus, 2600); thump(55, t + 0.2, 0.8, bus, 1.2); note('gallery.stamp'); };
 S.voices = () => voices.length;
 return S;
 })();
